@@ -12,6 +12,7 @@ set_debug(DEBUG)
 
 print('Debug mode: ', DEBUG)
 
+
 def test_iou(imgs, gts, preds, names):
     base = os.path.join(DEMO_PATH, 'output')
     if not os.path.exists(base):
@@ -26,8 +27,6 @@ def test_iou(imgs, gts, preds, names):
             if DEBUG:
                 tmp = np.stack([_pred, np.zeros_like(_pred), _gt], 2)*255
                 cv.imwrite(os.path.join(base, name+'.png'), tmp)
-            cv.imwrite('gt.png', _gt*255)
-            cv.imwrite('pred.png', _pred * 255)
             # print('dafadf',pred)
             # print(_gt.dtype, np.unique(_gt, return_counts=True))
             print(mean_iou(_gt, _pred, 2, [1,1]))
