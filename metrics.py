@@ -1,19 +1,17 @@
-import torch
 import numpy as np
-import os
-import tqdm
-import sys
-import tensorflow as tf
 import cv2 as cv
-from time import time
 from scipy.spatial.distance import euclidean as l2
-from shutil import rmtree
-from glob import glob
-# sess = tf.Session()
 
 DEBUG = False # turn off debug for faster calculation
 RATIO = 1.
 
+
+def set_debug(debug):
+    global DEBUG
+    DEBUG = debug
+
+def get_debug():
+    return DEBUG
 
 def draw_box(img, boxes, cls):
     img = np.array(img).copy()
@@ -51,29 +49,14 @@ def mean_iou(labels, predictions, num_classes, weights):
         union = lab|pre
         ans.append(inter.sum()/union.sum())
 
-    return np.mean(np.array(ans)*weights), ans
+    return np.mean(np.array(ans)*weights)
 
 
-class split_error:
+class base_error:
     def __init__(self):
-        self.__metrics = self.__split_box
 
         self.gt_map = None
         self.pr_map = None
-
-    def __call__(self, gt, pred, img = None):
-        """
-
-        :param gt: array of bounding boxes (quadrilateral) in groundtruth
-        :param pred: same as gt
-        :param img: original document - used for debug
-        :return: total splits, average split per line, std split
-        """
-        if img is not None:
-            img = cv.resize(img, (0, 0), fx=RATIO, fy=RATIO)
-        gt = (np.array(gt) * RATIO).astype(np.int32)
-        pred = (np.array(pred) * RATIO).astype(np.int32)
-        return self.__metrics(gt, pred, img)
 
     def __get_shape(self, boxes):
         return boxes.reshape(-1,2).max(0)
@@ -103,12 +86,11 @@ class split_error:
         return patch, db_gt, db_pr
 
     # @staticmethod
-    def __split_box(self, gt, pred, img=None):
+    def __cal_err(self, gt, pred, img=None):
         gt = np.array(gt)
         pred = np.array(pred)
         # TODO: sort predicted boxes by its area to prevent bigger boxes from covering the small ones.
         assert len(gt.shape) == len(pred.shape) == 3
-        cv.imwrite('test.png', img)
         # return 0
         shape = img.shape if img is not None else None
         self.img = img
@@ -145,67 +127,44 @@ class split_error:
 
         errs = np.array(errs)-1
         errs = (errs>0)*errs
-        ret = errs.sum(), errs.mean(), errs.std()
+        ret = {'Total error': errs.sum(),
+               'Mean error': errs.mean(),
+               'STD': errs.std()}
         # print(ret, db_list)
 
         return ret, db_list
 
 
+class split_error(base_error):
+    def __init__(self):
+        super(split_error, self).__init__()
 
-def main():
-    print('Start main')
-    from via_io import VIAReader
-    # ll = ['RG1-12', 'RG1-1', 'RG1-4']
-    ll = ['RG1-2', 'RG1-3', 'RG1-4', 'RG1-5', 'RG1-6', 'RG1-7', 'RG1-8', 'RG1-9', 'RG1-10']
-    ll = ['RG1-2']
+    def __call__(self, gt, pred, img = None):
+        """
 
-    # print(ll)
-    # return
-    ext = 'png'
-    gts = []
-    preds = []
-    imgs = []
-    ll = sorted([os.path.splitext(os.path.basename(im))[0] for im in glob('./imgs/*.%s'%ext)])
-    base = './output'
-    if not os.path.exists(base):
-        os.makedirs(base)
-    for name in ll:
-        try:
-            print(name)
-            iname = name+'.'+ext
-            gt = VIAReader(os.path.join('gts', name+'.csv')).getBoxes()
-            gts.append(gt)
-            pred = VIAReader(os.path.join('preds', name + '.csv')).getBoxes()
-            preds.append(pred)
+        :param gt: array of bounding boxes (quadrilateral) in groundtruth
+        :param pred: same as gt
+        :param img: original document - used for debug
+        :return: total splits, average split per line, std split
+        """
+        if img is not None:
+            img = cv.resize(img, (0, 0), fx=RATIO, fy=RATIO)
+        gt = (np.array(gt) * RATIO).astype(np.int32)
+        pred = (np.array(pred) * RATIO).astype(np.int32)
+        return self._base_error__cal_err(gt, pred, img)
 
-            img = cv.imread(os.path.join('imgs', iname))
-            img = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-            # ratio = 1.5
-            # img = cv.resize(img, (0,0), fx=1./ratio, fy=1./ratio)
-            imgs.append(img)
-            # print(imgs)
-            err = split_error()
-            # print(out)
-            start_time = time()
-            err, db_imgs = err(gt, pred, img)
 
-            print('Time %f'%(time()-start_time))
-            print(err)
-            out_folder = os.path.join(base, name)
-            if os.path.exists(out_folder):
-                rmtree(out_folder)
-            os.makedirs(out_folder)
+class merge_error(base_error):
+    def __init__(self):
+        super(merge_error, self).__init__()
 
-            if DEBUG:
-                for idx, im in enumerate(db_imgs):
-                    # print(os.path.join(out_folder, '%d.png'%idx))
-                    cv.imwrite(os.path.join(out_folder, '%d.png'%idx), im)
-        except Exception as e:
-            print(e)
-        # return
+    def __call__(self, gt, pred, img=None):
+        if img is not None:
+            img = cv.resize(img, (0, 0), fx=RATIO, fy=RATIO)
 
-if __name__ == '__main__':
-    main()
-    # print('hello')
+        gt, pred = pred, gt
 
-# multi part
+        gt = (np.array(gt) * RATIO).astype(np.int32)
+        pred = (np.array(pred) * RATIO).astype(np.int32)
+        return self._base_error__cal_err(gt, pred, img)
+
